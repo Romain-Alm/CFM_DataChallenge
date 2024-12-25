@@ -1,0 +1,26 @@
+# Environnements virtuels
+venv/
+myenv/
+.env/
+environnementML/
+
+# Fichiers Python compilés
+*.pyc
+__pycache__/
+
+# Notebooks Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Dépendances installées
+*.egg-info/
+pip-log.txt
+
+# Dossiers de configuration
+.idea/
+.vscode/
+
+# Autres fichiers ou dossiers à exclure
+*.log
+
+# Fichiers inutiles
+.DS_Store
