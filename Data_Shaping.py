@@ -3,6 +3,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy import stats
+from sklearn.preprocessing import RobustScaler
 
 ### 1 Preparation and data analysis
 def analyze_basic_stats(df):
@@ -103,7 +104,117 @@ def generate_exploration_report(df, sequences):
 
 ### 2 feature engineering
 
+def check_sequence_anomalies(sequence):
+    """
+    Vérifie les anomalies dans une séquence
+    """
+    return {
+        'price_range': sequence['price'].max() - sequence['price'].min(),
+        'abnormal_spread': (sequence['ask'] < sequence['bid']).any(),
+        'negative_size': (sequence[['bid_size', 'ask_size']] < 0).any().any(),
+        'extreme_price_move': abs(sequence['price'].diff()).max() > 3 * sequence['price'].diff().std(),
+        'high_imbalance': abs((sequence['bid_size'] - sequence['ask_size']) / 
+                            (sequence['bid_size'] + sequence['ask_size'])).max() > 0.8,
+        'has_trades': sequence['trade'].any()
+    }
 
+def analyze_sequences(df):
+    """
+    Analyse toutes les séquences et crée des marqueurs
+    """
+    sequence_markers = []
+    sequence_stats = {}
+    
+    for obs_id, sequence in df.groupby('obs_id'):
+        if len(sequence) != 100:
+            print(f"Warning: Sequence {obs_id} has {len(sequence)} events")
+            
+        stats = check_sequence_anomalies(sequence)
+        sequence_stats[obs_id] = stats
+        sequence_markers.append(pd.DataFrame([stats] * len(sequence), index=sequence.index))
+    
+    return pd.concat(sequence_markers), pd.DataFrame.from_dict(sequence_stats, orient='index')
+
+def create_sequence_features(sequence):
+    """
+    Crée des features pour une séquence donnée
+    """
+    sequence = sequence.copy()
+    
+    # Features basiques
+    sequence['spread'] = sequence['ask'] - sequence['bid']
+    sequence['order_imbalance'] = (sequence['bid_size'] - sequence['ask_size']) / (sequence['bid_size'] + sequence['ask_size'])
+    
+    # Features cumulatives
+    sequence['cumul_volume'] = sequence['flux'].cumsum()
+    sequence['price_change'] = sequence['price'].diff()
+    ### la position dans le carnet d'oredre est donné par order_id
+    
+    ### anomalies detection
+    df['price_anomaly'] = (df['ask'] < df['bid']).astype(int) ### catégorise dès que bid>ask
+    
+    return sequence
+
+
+def normalize_numeric_features(df, numeric_cols=None):
+    """
+    Normalise les features numériques en préservant la structure des séquences
+    """
+    if numeric_cols is None:
+        numeric_cols = ['price', 'bid', 'ask', 'bid_size', 'ask_size', 'flux']
+    
+    df_normalized = df.copy()
+    scalers = {}
+    
+    for col in numeric_cols:
+        scalers[col] = RobustScaler()
+        df_normalized[col] = scalers[col].fit_transform(df[[col]])
+    
+    return df_normalized, scalers
+
+def process_all_sequences(df):
+    """
+    Fonction principale de traitement des séquences
+    """
+    # Création des features pour chaque séquence
+    sequences_with_features = pd.concat([
+        create_sequence_features(sequence) 
+        for _, sequence in df.groupby('obs_id')
+    ])
+    
+    # Normalisation
+    normalized_df, scalers = normalize_numeric_features(sequences_with_features)
+    
+    # Analyse des séquences
+    markers, stats = analyze_sequences(normalized_df)
+    
+    # Combinaison des résultats
+    final_df = pd.concat([normalized_df, markers], axis=1)
+    
+    return final_df, stats, scalers
+
+def get_sequence_statistics(df):
+    """
+    Calcule des statistiques globales sur les séquences
+    """
+    stats = {
+        'total_sequences': df['obs_id'].nunique(),
+        'avg_trades_per_sequence': df.groupby('obs_id')['trade'].sum().mean(),
+        'sequences_with_trades': (df.groupby('obs_id')['trade'].sum() > 0).sum(),
+        'action_distribution': df['action'].value_counts(normalize=True),
+        'side_distribution': df['side'].value_counts(normalize=True)
+    }
+    return stats
+
+# # Exemple d'utilisation:
+# def main(df):
+#     # Traitement complet
+#     processed_df, sequence_stats, scalers = process_all_sequences(df)
+    
+#     # Statistiques globales
+#     global_stats = get_sequence_statistics(df)
+    
+#     return processed_df, sequence_stats, global_stats, scalers
 
 
 
