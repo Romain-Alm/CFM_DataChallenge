@@ -147,11 +147,12 @@ def create_sequence_features(sequence):
     
     # Features cumulatives
     sequence['cumul_volume'] = sequence['flux'].cumsum()
-    sequence['price_change'] = sequence['price'].diff()
+    sequence['price'] - sequence['price'].iloc[0]
+
     ### la position dans le carnet d'oredre est donné par order_id
     
     ### anomalies detection
-    df['price_anomaly'] = (df['ask'] < df['bid']).astype(int) ### catégorise dès que bid>ask
+    sequence['price_anomaly'] = (sequence['ask'] < sequence['bid']).astype(int) ### catégorise dès que bid>ask
     
     return sequence
 
@@ -205,17 +206,6 @@ def get_sequence_statistics(df):
         'side_distribution': df['side'].value_counts(normalize=True)
     }
     return stats
-
-# # Exemple d'utilisation:
-# def main(df):
-#     # Traitement complet
-#     processed_df, sequence_stats, scalers = process_all_sequences(df)
-    
-#     # Statistiques globales
-#     global_stats = get_sequence_statistics(df)
-    
-#     return processed_df, sequence_stats, global_stats, scalers
-
 
 
 
