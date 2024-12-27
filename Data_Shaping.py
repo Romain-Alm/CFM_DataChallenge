@@ -4,8 +4,10 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy import stats
 from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import LabelEncoder
+from tensorflow.keras.utils import to_categorical
 
-### 1 Preparation and data analysis
+### 1 data analysis
 def analyze_basic_stats(df):
     """
     Analyse statistique basique des colonnes numériques
@@ -153,8 +155,12 @@ def process_sequences(df):
     return sequences_with_features
 
 
-### 3 model preparation
+### 3 data preparation for RNN
 
+def keep_useful_columns(df):
+    if 'obs_id' in list(df.columns):
+        df = df.drop(columns=['obs_id'])
+    return df
 
 
 

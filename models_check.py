@@ -78,3 +78,7 @@ def complexed_gru_reshaped2(input_shape, order_id_dim, action_dim, side_dim, ven
                   loss='categorical_crossentropy',
                   metrics=['accuracy'])
     return model
+
+
+### pour le code 1) finir la partie shaping (dont le spleat train cv) 2) choisir 3/4 modèles différents 
+# 3) les faire tourner avec reduceLRonPlatau et EarlyStoppingsur 15 epochs4) faire tourner le plus performant
