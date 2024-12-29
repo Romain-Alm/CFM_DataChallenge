@@ -56,8 +56,8 @@ def train_model(model_function, X, Y, epochs=50, batch_size=32):
         epochs=epochs,
         batch_size=batch_size,
         callbacks=[
-            tf.keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True),
-            tf.keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=3)
+            tf.keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True),
+            tf.keras.callbacks.ReduceLROnPlateau(factor=0.75, patience=3)
         ]
     )
     
@@ -138,83 +138,152 @@ def complexed_gru_reshaped2(input_shape, order_id_dim, action_dim, side_dim, ven
     return model
 
 
-### pour le code 1) finir la partie shaping (dont normalisation + le split train cv) 2) choisir 3/4 modèles différents 
-# 3) les faire tourner avec reduceLRonPlatau et EarlyStoppingsur 15 epochs4) faire tourner le plus performant
+def basic_gru_model(input_shape=(100, 11), order_id_dim=100, venue_dim=6, 
+                   action_dim=3, side_dim=2, trade_dim=2, learning_rate=3e-3):
+    """
+    Modèle GRU simplifié avec embeddings de base
+    """
+    # Entrées numériques
+    numeric_input = Input(shape=input_shape)
+    
+    # Embeddings simples
+    order_id_input = Input(shape=(100,))
+    order_id_embedding = Embedding(input_dim=order_id_dim, output_dim=8)(order_id_input)
+    
+    action_input = Input(shape=(100,))
+    action_embedding = Embedding(input_dim=action_dim, output_dim=4)(action_input)
+    
+    side_input = Input(shape=(100,))
+    side_embedding = Embedding(input_dim=side_dim, output_dim=2)(side_input)
+    
+    venue_input = Input(shape=(100,))
+    venue_embedding = Embedding(input_dim=venue_dim, output_dim=3)(venue_input)
+    
+    trade_input = Input(shape=(100,))
+    trade_embedding = Embedding(input_dim=trade_dim, output_dim=2)(trade_input)
+
+    # Concaténation
+    concatenated_embeddings = concatenate([
+        order_id_embedding, action_embedding, side_embedding, 
+        venue_embedding, trade_embedding
+    ], axis=-1)
+    
+    # Fusion avec données numériques
+    merged = concatenate([numeric_input, concatenated_embeddings], axis=-1)
+    
+    # Couches GRU simples
+    x = Bidirectional(GRU(64, return_sequences=True))(merged)
+    x = BatchNormalization()(x)
+    x = Dropout(0.2)(x)
+    
+    x = Bidirectional(GRU(32))(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.2)(x)
+    
+    # Couches denses finales
+    x = Dense(64, activation='relu')(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.2)(x)
+    
+    outputs = Dense(24, activation='softmax')(x)
+    
+    # Modèle
+    model = Model(
+        inputs=[numeric_input, order_id_input, venue_input,
+                action_input, side_input, trade_input],
+        outputs=outputs
+    )
+    
+    # Compilation
+    model.compile(
+        optimizer=Adam(learning_rate=learning_rate),
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
 
 
-# def evaluate_models(X, Y, model_functions):
-#     """
-#     Compare plusieurs modèles sur le même jeu de données
+def advanced_gru_model(input_shape=(100, 11), order_id_dim=100, venue_dim=6, 
+                      action_dim=3, side_dim=2, trade_dim=2, learning_rate=1e-3):
+    """
+    Version avancée du modèle GRU avec améliorations ciblées
+    """
+    # Entrées numériques
+    numeric_input = Input(shape=input_shape)
     
-#     Parameters:
-#     -----------
-#     X : DataFrame
-#         Données d'entrée complètes
-#     Y : array
-#         Labels correspondants
-#     model_functions : dict
-#         Dictionnaire des fonctions de création de modèles à comparer
-        
-#     Returns:
-#     --------
-#     DataFrame
-#         Résultats de performance pour chaque modèle
-#     """
-#     results = []
+    # Embeddings plus larges pour capturer plus d'informations
+    order_id_input = Input(shape=(100,))
+    order_id_embedding = Embedding(input_dim=order_id_dim, output_dim=16)(order_id_input)
     
-#     for model_name, model_func in model_functions.items():
-#         # Entraînement du modèle
-#         model, history = train_model(model_func, X, Y)
-        
-#         # Préparation des données de validation pour l'évaluation finale
-#         _, val_data, _, val_labels = split_data(X, Y)
-#         val_numeric, val_order, val_venue, val_action, val_side, val_trade = prepare_data_pipeline(val_data)
-        
-#         # Évaluation sur les données de validation
-#         val_score = model.evaluate(
-#             [val_numeric, val_order, val_venue, val_action, val_side, val_trade],
-#             val_labels,
-#             verbose=0
-#         )
-        
-#         # Enregistrement des résultats
-#         results.append({
-#             'model_name': model_name,
-#             'validation_loss': val_score[0],
-#             'validation_accuracy': val_score[1],
-#             'best_epoch': len(history.history['loss']),
-#             'min_val_loss': min(history.history['val_loss']),
-#             'max_val_accuracy': max(history.history['val_accuracy'])
-#         })
+    action_input = Input(shape=(100,))
+    action_embedding = Embedding(input_dim=action_dim, output_dim=8)(action_input)
     
-#     return pd.DataFrame(results)
+    side_input = Input(shape=(100,))
+    side_embedding = Embedding(input_dim=side_dim, output_dim=4)(side_input)
+    
+    venue_input = Input(shape=(100,))
+    venue_embedding = Embedding(input_dim=venue_dim, output_dim=8)(venue_input)
+    
+    trade_input = Input(shape=(100,))
+    trade_embedding = Embedding(input_dim=trade_dim, output_dim=4)(trade_input)
 
-# def run_model_comparison(X, Y):
-#     """
-#     Fonction principale pour exécuter la comparaison des modèles
+    # Traitement séparé des embeddings
+    concatenated_embeddings = concatenate([
+        order_id_embedding, action_embedding, side_embedding, 
+        venue_embedding, trade_embedding
+    ], axis=-1)
     
-#     Parameters:
-#     -----------
-#     X : DataFrame
-#         Données d'entrée
-#     Y : array
-#         Labels correspondants
-        
-#     Returns:
-#     --------
-#     DataFrame
-#         Résultats comparatifs des différents modèles
-#     """
-#     model_functions = {
-#         'lstm': create_lstm_model,
-#         'gru': create_gru_model,
-#         'transformer': create_transformer_model
-#         # Ajoutez d'autres modèles ici selon besoin
-#     }
+    # Prétraitement des données numériques
+    numeric_processed = Dense(32, activation='selu')(numeric_input)
+    numeric_processed = BatchNormalization()(numeric_processed)
     
-#     results = evaluate_models(X, Y, model_functions)
+    # Fusion des données
+    merged = concatenate([numeric_processed, concatenated_embeddings], axis=-1)
     
-#     print("\nRésultats de la comparaison des modèles :")
-#     print(results[['model_name', 'validation_accuracy', 'validation_loss', 'best_epoch']])
+    # Premier bloc GRU avec skip connection
+    main_path = Bidirectional(GRU(128, return_sequences=True))(merged)
+    main_path = BatchNormalization()(main_path)
+    main_path = Dropout(0.3)(main_path)
     
-#     return results
+    # Couche d'attention simple
+    attention = Dense(1, use_bias=False)(main_path)
+    attention_weights = Activation('softmax')(attention)
+    context_vector = multiply([main_path, attention_weights])
+    
+    # Deuxième bloc GRU avec taille réduite
+    x = Bidirectional(GRU(64, return_sequences=False))(context_vector)
+    x = BatchNormalization()(x)
+    x = Dropout(0.3)(x)
+    
+    # Couches denses avec architecture pyramidale
+    x = Dense(256, activation='selu')(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.3)(x)
+    
+    x = Dense(128, activation='selu')(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.2)(x)
+    
+    x = Dense(64, activation='selu')(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.2)(x)
+    
+    # Couche de sortie
+    outputs = Dense(24, activation='softmax')(x)
+    
+    # Construction du modèle
+    model = Model(
+        inputs=[numeric_input, order_id_input, venue_input,
+                action_input, side_input, trade_input],
+        outputs=outputs
+    )
+    
+    # Compilation avec paramètres optimisés
+    model.compile(
+        optimizer=Adam(learning_rate=learning_rate),
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
