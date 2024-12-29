@@ -23,4 +23,4 @@ pip-log.txt
 *.log
 
 # Fichiers inutiles
-.DS_Store
+.DS_Store*.h5
