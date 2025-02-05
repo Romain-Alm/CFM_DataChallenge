@@ -24,3 +24,9 @@ pip-log.txt
 
 # Fichiers inutiles
 .DS_Store*.h5
+
+# Ajoutez ces lignes dans .gitignore
+.DS_Store
+*.h5
+*.csv
+__pycache__/

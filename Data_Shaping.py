@@ -111,24 +111,6 @@ def generate_exploration_report(df, sequences):
 
 
 
-
-### 2 feature engineering
-#     """
-#     Analyse toutes les séquences et crée des marqueurs
-#     """
-#     sequence_markers = []
-#     sequence_stats = {}
-    
-#     for obs_id, sequence in df.groupby('obs_id'):
-#         if len(sequence) != 100:
-#             print(f"Warning: Sequence {obs_id} has {len(sequence)} events")
-            
-#         stats = check_sequence_anomalies(sequence)
-#         sequence_stats[obs_id] = stats
-#         sequence_markers.append(pd.DataFrame([stats] * len(sequence), index=sequence.index))
-    
-#     return pd.concat(sequence_markers), pd.DataFrame.from_dict(sequence_stats, orient='index')
-
 def create_sequence_features(sequence):
     """
     Crée des features pour une séquence donnée
@@ -150,6 +132,51 @@ def create_sequence_features(sequence):
     
     return sequence
 
+def create_sequence_features2(sequence):
+    sequence = sequence.copy()
+    
+    # Mid price (très informatif pour la classification)
+    sequence['mid_price'] = (sequence['ask'] + sequence['bid']) / 2
+    sequence['order_imbalance'] = (sequence['bid_size'] - sequence['ask_size']) / (sequence['bid_size'] + sequence['ask_size'])
+
+    # Order flow imbalance amélioré
+    sequence['price_change']=sequence['price'] - sequence['price'].iloc[0]
+    sequence['cumul_volume'] = sequence['flux'].cumsum()
+
+    # Relative spread (meilleur que le spread absolu)
+    sequence['relative_spread'] = (sequence['ask'] - sequence['bid']) 
+    # Transformations log avec offsets spécifiques
+    sequence['log_ask_size'] = np.log(sequence['ask_size'] + 1)  # ask_size est toujours positif
+    sequence['log_bid_size'] = np.log(sequence['bid_size'] + 3)  # offset de 3 pour bid_size qui peut être négatif
+    sequence['log_flux'] = np.log(sequence['flux'] + 50001) 
+    return sequence
+
+
+
+def create_sequence_features3(sequence):
+    sequence = sequence.copy()
+    
+    # Handle extreme values with log transform
+    eps = 1e-8
+    sequence['log_price'] = np.sign(sequence['price']) * np.log1p(np.abs(sequence['price']))
+    sequence['log_bid_size'] = np.log1p(sequence['bid_size'] + eps)
+    sequence['log_ask_size'] = np.log1p(sequence['ask_size'] + eps)
+    sequence['log_flux'] = np.sign(sequence['flux']) * np.log1p(np.abs(sequence['flux']))
+    sequence['log_bid'] = np.sign(sequence['bid']) * np.log1p(np.abs(sequence['bid']))
+    sequence['log_ask'] = np.sign(sequence['ask']) * np.log1p(np.abs(sequence['ask']))
+
+    
+    # Relative features (less affected by scale)
+    
+    sequence['mid_price'] = (sequence['ask'] + sequence['bid']) / 2
+    sequence['price_change'] = sequence['price'] - sequence['price'].iloc[0]
+    sequence['relative_spread'] = (sequence['ask'] - sequence['bid']) / ((sequence['ask'] + sequence['bid'])/2)
+    sequence['order_imbalance'] = (sequence['bid_size'] - sequence['ask_size']) / (sequence['bid_size'] + sequence['ask_size'])
+    
+    # Accumulative features
+    sequence['cumul_volume'] = sequence['flux'].cumsum()
+    
+    return sequence   
 def process_sequences(df):
     """
     Fonction principale de traitement des séquences
@@ -162,13 +189,29 @@ def process_sequences(df):
     
     return sequences_with_features
 
+def process_sequences2(df):
+    """
+    Fonction principale de traitement des séquences
+    """
+    # Création des features pour chaque séquence
+    sequences_with_features = pd.concat([
+        create_sequence_features2(sequence) 
+        for _, sequence in df.groupby('obs_id')
+    ])
+    
+    return sequences_with_features
 
-### 3 data preparation for RNN
-
-# def keep_useful_columns(df):
-#     if 'obs_id' in list(df.columns):
-#         df = df.drop(columns=['obs_id'])
-#     return df
+def process_sequences3(df):
+    """
+    Fonction principale de traitement des séquences
+    """
+    # Création des features pour chaque séquence
+    sequences_with_features = pd.concat([
+        create_sequence_features3(sequence) 
+        for _, sequence in df.groupby('obs_id')
+    ])
+    
+    return sequences_with_features
 
 def encoding_columns(df):
     df['action_encoded']=df['action'].map({'A': 0, 'D': 1, 'U': 2})
@@ -185,6 +228,77 @@ def split_data(X,Y):
     y_cv=Y.tail(int(0.2*len(Y)))
 
     return x_train, x_cv, y_train, y_cv
+
+def prepare_data_pipeline3(df):
+    """
+    Pipeline principal de préparation des données retournant les features numériques 
+    et catégorielles sous forme de numpy arrays
+    """
+    # Application du feature engineering
+    df = process_sequences3(df)
+    print("Colonnes disponibles avant encodage:", df.columns.tolist())
+    # Encodage des colonnes catégorielles
+    df_encoded = encoding_columns(df)
+    print("Colonnes disponibles après encodage:", df_encoded.columns.tolist())
+    
+    # Préparation des features numériques
+    numeric_features = ['log_price', 'log_bid', 'log_ask', 'log_bid_size', 'log_ask_size', 'log_flux',
+                       'relative_spread', 'order_imbalance', 'cumul_volume', 'price_change',
+                       'mid_price']
+    
+    # Normalisation et reshape des features numériques
+    scaler = StandardScaler()
+    numeric_array = scaler.fit_transform(df[numeric_features].values)
+    numeric_array = numeric_array.reshape(-1, 100, len(numeric_features))
+    print("successfull normalizayion")
+    
+    # Préparation des arrays catégoriels
+    order_ids = df['order_id'].values.reshape(-1, 100)
+    venues = df['venue'].values.reshape(-1, 100)
+    actions = df_encoded['action_encoded'].values.reshape(-1, 100)
+    sides = df_encoded['side_encoded'].values.reshape(-1, 100)
+    trades = df_encoded['trade_encoded'].values.reshape(-1, 100)
+    
+    return numeric_array, order_ids, venues, actions, sides, trades
+
+
+
+
+def prepare_data_pipeline2(df):
+    """
+    Pipeline principal de préparation des données retournant les features numériques 
+    et catégorielles sous forme de numpy arrays
+    """
+    # Application du feature engineering
+    df = process_sequences2(df)
+    print("Colonnes disponibles avant encodage:", df.columns.tolist())
+    # Encodage des colonnes catégorielles
+    df_encoded = encoding_columns(df)
+    print("Colonnes disponibles après encodage:", df_encoded.columns.tolist())
+    
+    # Préparation des features numériques
+    numeric_features = ['price', 'bid', 'ask', 'log_bid_size', 'log_ask_size', 'log_flux',
+                       'relative_spread', 'order_imbalance', 'cumul_volume', 'price_change',
+                       'mid_price']
+    
+    # Normalisation et reshape des features numériques
+    scaler = StandardScaler()
+    numeric_array = scaler.fit_transform(df[numeric_features].values)
+    numeric_array = numeric_array.reshape(-1, 100, len(numeric_features))
+    print("successfull normalizayion")
+
+    # Préparation des arrays catégoriels
+    order_ids = df['order_id'].values.reshape(-1, 100)
+    venues = df['venue'].values.reshape(-1, 100)
+    actions = df_encoded['action_encoded'].values.reshape(-1, 100)
+    sides = df_encoded['side_encoded'].values.reshape(-1, 100)
+    trades = df_encoded['trade_encoded'].values.reshape(-1, 100)
+    
+    return numeric_array, order_ids, venues, actions, sides, trades
+
+
+
+
 
 def prepare_data_pipeline(df):
     """
@@ -219,28 +333,3 @@ def prepare_data_pipeline(df):
     return numeric_array, order_ids, venues, actions, sides, trades
 
 
-
-
-
-
-
-
-# def embeding_columns(df):
-#     order_id = Input(shape=(100,))
-#     order_id_embedding = Embedding(input_dim=101, output_dim=8)(order_id)
-
-#     action_encoded = Input(shape=(100,))
-#     action_embedding = Embedding(input_dim=4, output_dim=4)(action_encoded)
-
-#     side_encoded = Input(shape=(100,))
-#     side_embedding = Embedding(input_dim=3, output_dim=2)(side_encoded)
-
-#     venue = Input(shape=(100,))
-#     venue_embedding = Embedding(input_dim=7, output_dim=3)(venue)
-
-#     trade_encoded = Input(shape=(100,))
-#     trade_embedding = Embedding(input_dim=2, output_dim=2)(trade_encoded)
-#     concatenated_embeddings = concatenate([
-#     order_id_embedding, action_embedding, side_embedding, venue_embedding, trade_embedding
-#     ], axis=-1)
-#     return concatenated_embeddings, [order_id, action_encoded, side_encoded, venue, trade_encoded]
